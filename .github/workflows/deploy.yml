@@ -1,0 +1,41 @@
+name: Deploy to Hetzner
+
+on:
+  repository_dispatch:
+    types: [provision, deploy]
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: deploy
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            SLUG="${{ github.event.client_payload.slug || github.event.repository.name }}"
+            PORT="${{ github.event.client_payload.port || '3100' }}"
+            REPO_URL="https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git"
+            CYBERPANEL_PASS="${{ github.event.client_payload.cyberpanel_pass || secrets.CYBERPANEL_ADMIN_PASS }}"
+            if [ "${{ github.event_name }}" = "repository_dispatch" ] && [ "${{ github.event.action }}" = "provision" ]; then
+              /opt/groth/provision.sh "$SLUG" "$PORT" "$REPO_URL" "$CYBERPANEL_PASS"
+            else
+              cd /var/www/clients/$SLUG
+              git pull origin main
+              npm ci && npm run build
+              pm2 restart "client-$SLUG"
+            fi
+
+      - name: Notify portal (provision only)
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'provision'
+        run: |
+          curl -X POST "${{ secrets.PORTAL_CALLBACK_URL }}/api/portal/admin/provision/callback" \
+            -H "Authorization: Bearer ${{ secrets.PORTAL_WEBHOOK_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"clientId\":\"${{ github.event.client_payload.client_id }}\",\"status\":\"active\",\"siteUrl\":\"https://${{ github.event.client_payload.slug }}.groth.agency\"}"
