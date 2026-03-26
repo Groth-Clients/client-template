@@ -28,8 +28,8 @@ jobs:
 
           if [ "${{ github.event_name }}" = "repository_dispatch" ] && [ "${{ github.event.action }}" = "provision" ]; then
             ssh -i ~/.ssh/deploy_key deploy@${{ secrets.HETZNER_HOST }} "/opt/groth/provision.sh '$SLUG' '$PORT' '$REPO_URL' '$CYBERPANEL_PASS'"
-          else
-            ssh -i ~/.ssh/deploy_key deploy@${{ secrets.HETZNER_HOST }} "cd /var/www/clients/$SLUG && git pull origin main && npm ci && npm run build && pm2 restart client-$SLUG"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            ssh -i ~/.ssh/deploy_key deploy@${{ secrets.HETZNER_HOST }} "[ -d /var/www/clients/$SLUG ] && cd /var/www/clients/$SLUG && git pull origin main && npm ci && npm run build && pm2 restart client-$SLUG || echo 'Site not provisioned yet, skipping deploy'"
           fi
 
       - name: Notify portal (provision only)
